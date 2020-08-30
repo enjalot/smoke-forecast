@@ -1,0 +1,7 @@
+data*/
+images-*/
+node_modules
+input
+output
+package-lock.json
+*.mp4
