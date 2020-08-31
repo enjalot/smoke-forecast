@@ -10,19 +10,28 @@ let topojson = require("topojson-client");
 let us = require("./node_modules/us-atlas/counties-10m.json");
 
 let asynch = require("async")
-const { isRegExp } = require('util');
 let image = require('get-image-data');
 
 let stateShapes = topojson.feature(us, us.objects.states)//.features
 let statesByName = new Map(stateShapes.features.map(d => [d.properties.name, d]))
 let california = statesByName.get("California")
+let countyShapes = topojson.feature(us, us.objects.counties)//.features
+let countyExtent = {
+  type: "FeatureCollection", 
+    features: countyShapes.features.filter(d => (
+      d.properties.name == "Marin" || 
+      d.properties.name == "Santa Clara") && d.id.slice(0,2) == "06") 
+}
 
 let ts = process.argv[2]
 let dir = "images-" + ts
 console.log("dir", dir)
 
+let filterWidth = 600
+let filterHeight = 400
+
 // save space by not including all data
-let hours = 24
+let hours = 71
   
 // converter from grayscale pixels to AQI value
 let pmLookup = new Map([
@@ -53,6 +62,10 @@ image(dir + "/" + imgs[0], function (err, info) {
   let mercator = d3.geoMercator()
     .fitSize([w, h], california)
 
+  let alb = d3.geoAlbersUsa()
+    .fitSize([955, 500], countyExtent)
+
+
   let nw = mercator([region.west_lon, region.north_lat])
   let ne = mercator([region.east_lon, region.north_lat])
   let se = mercator([region.east_lon, region.south_lat])
@@ -76,7 +89,20 @@ image(dir + "/" + imgs[0], function (err, info) {
     console.log("hexbinning", img)
     let i = imgs.indexOf(img)
     let data = d3.csvParse(fs.readFileSync(dir+"/"+img.replace(".png", ".csv")).toString(), d3.autoType)
-    let binned = hexbin(data)
+
+    // TODO: filter this to smaller bounding box
+    // ideally this would be a parameter somehow
+    // can imagine generating other regions or even tiles
+
+    let filtered = data.filter(d => {
+      let m = mercator.invert([d.x, d.y])
+      let p = alb(m)
+      if(!p) return false
+      return (p[0] > 0 && p[0] < filterWidth && p[1] > 0 && p[1] < filterHeight)
+    })
+    console.log("FILTERED", filtered.length)
+
+    let binned = hexbin(filtered)
       
     // this looks like an array of arrays, where each inner array is the
     // set of points that fell within the same hex
